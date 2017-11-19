@@ -30,7 +30,6 @@ def extract_first_image(bucket, key):
 	
 	for part in mail.walk():
 		c_type = part.get_content_type()
-		c_disp = part.get('Content-Disposition')		
 		if (c_type == "image/jpeg"):
 			image_fh.write(part.get_payload(None, True))
 			return image_fh
