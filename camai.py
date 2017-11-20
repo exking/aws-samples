@@ -29,29 +29,32 @@ def detect_labels(image_file):
 
 def extract_first_image(fh):
 	mail = email.message_from_string(fh.read())
-	image_fh = cStringIO.StringIO()
+	image_fh = []
+	file_num = 0
 	
 	for part in mail.walk():
 		c_type = part.get_content_type()
 		if (c_type == "image/jpeg"):
-			image_fh.write(part.get_payload(None, True))
-			return image_fh
-			
-	image_fh.close()
-	return None
+			image_fh.append(cStringIO.StringIO())
+			image_fh[file_num].write(part.get_payload(None, True))
+			file_num += 1
+	return image_fh
 
 def send_email(mail_body, image_file):
 	msg = MIMEMultipart()
 	msg['Subject'] = 'Rekognition result'
 	msg['From'] = '__FROM@EXAMPLE.COM__'
 	msg['To'] = '__TO@EXAMPLE.COM__'
+	part_num = 0
 	
 	part = MIMEText(mail_body)
 	msg.attach(part)
 	
-	part = MIMEApplication(image_file.getvalue())
-	part.add_header('Content-Disposition', 'attachment', filename='Image.jpg')
-	msg.attach(part)
+	for image_fh in image_file:
+		part = MIMEApplication(image_fh.getvalue())
+		part.add_header('Content-Disposition', 'attachment', filename='Image'+str(part_num)+'.jpg')
+		part_num += 1
+		msg.attach(part)
 	
 	s = smtplib.SMTP('localhost')
 	s.sendmail(msg['From'], msg['To'], msg.as_string())
@@ -62,7 +65,7 @@ def main():
 	analysis = ''
 	image_file = extract_first_image(sys.stdin)
 	
-	for label in detect_labels(image_file):
+	for label in detect_labels(image_file[0]):
 		if (label['Name'] == 'Human') or (label['Name'] == 'Car'):
 			send_notification = True
 		analysis += label['Name']+' - '+str(label['Confidence'])+'\n'
@@ -71,7 +74,8 @@ def main():
 	if send_notification:
 		send_email(analysis, image_file)
 		
-	image_file.close()
+	for image_fh in image_file:
+		image_fh.close()
 	
 if __name__=="__main__":
 	main()
