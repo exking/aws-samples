@@ -26,37 +26,41 @@ def extract_first_image(bucket, key):
 	mail = email.message_from_string(fh.getvalue())
 	fh.close()
 	
-	image_fh = cStringIO.StringIO()
+	image_fh = []
+	file_num = 0
 	
 	for part in mail.walk():
 		c_type = part.get_content_type()
 		if (c_type == "image/jpeg"):
-			image_fh.write(part.get_payload(None, True))
-			return image_fh
-			
-	print_with_timestamp('No Image found')
-	return None
+			image_fh.append(cStringIO.StringIO())
+			image_fh[file_num].write(part.get_payload(None, True))
+			file_num += 1
+
+	return image_fh
 
 def detect_labels(image_file):
 	response = rekognition.detect_labels(
 		Image = { 'Bytes': image_file.getvalue(), },
 		MaxLabels = 10,
-		MinConfidence = 90,
+		MinConfidence = 80,
 	)
 	return response['Labels']
 	
 def send_email(mail_body, image_file, mail_to):
 	msg = MIMEMultipart()
 	msg['Subject'] = 'Rekognition result'
-	msg['From'] = '__EXAMPLE@EXAMPLE.COM__'
+	msg['From'] = '__FROM@EXAMPLE.COM__'
 	msg['To'] = mail_to
+	part_num = 0
 	
 	part = MIMEText(mail_body)
 	msg.attach(part)
 	
-	part = MIMEApplication(image_file.getvalue())
-	part.add_header('Content-Disposition', 'attachment', filename='Image.jpg')
-	msg.attach(part)
+	for image_fh in image_file:
+		part = MIMEApplication(image_fh.getvalue())
+		part.add_header('Content-Disposition', 'attachment', filename='Image'+str(part_num)+'.jpg')
+		msg.attach(part)
+		part_num += 1
 	
 	ses.send_raw_email(
 		RawMessage = {
@@ -94,7 +98,7 @@ def lambda_handler(event, context):
 		image_file = extract_first_image(bucket, key)
 		
 		# Call rekognition DetectLabels API
-		for label in detect_labels(image_file):
+		for label in detect_labels(image_file[0]):
 			if (label['Name'] == 'Human') or (label['Name'] == 'Car'):
 				send_notification = True
 			analysis += label['Name']+' - '+str(label['Confidence'])+'\n'
@@ -105,9 +109,10 @@ def lambda_handler(event, context):
 			send_email(analysis, image_file, mail_from)
 		else:
 			print_with_timestamp('No humans detected: ', analysis)
-				
-		image_file.close()	
 		
+		for image_fh in image_file:
+			image_fh.close()
+
 	else:
 		print_with_timestamp('Email sender unknown')
 	
